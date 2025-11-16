@@ -146,30 +146,39 @@ def load_chroma_client(chroma_db_path: str = "./data/chroma_db"):
         # Check if collection exists
         try:
             collection = client.get_collection("ipex_epr_docs")
-            if collection.count() == 0:
-                # Try to build index automatically
+            count = collection.count()
+            if count == 0:
+                # Collection exists but is empty, try to build index automatically
+                logger.info("Collection exists but is empty, building index...")
                 if build_index_if_needed(client):
                     # Re-get collection after building
                     collection = client.get_collection("ipex_epr_docs")
                     if collection.count() > 0:
+                        logger.info(f"Index built successfully with {collection.count()} documents")
                         return client
                 st.warning("ChromaDB collection is empty. Please add PDFs to data/pdfs/ directory.")
                 return None
-            return client
-        except Exception:
+            else:
+                logger.info(f"Using existing index with {count} documents")
+                return client
+        except Exception as e:
             # Collection doesn't exist, try to build it automatically
+            logger.info("Collection not found, building index...")
             if build_index_if_needed(client):
                 # Re-get collection after building
                 try:
                     collection = client.get_collection("ipex_epr_docs")
-                    if collection.count() > 0:
+                    count = collection.count()
+                    if count > 0:
+                        logger.info(f"Index built successfully with {count} documents")
                         return client
-                except Exception:
-                    pass
-            st.error("ChromaDB collection 'ipex_epr_docs' not found. Please add PDFs to data/pdfs/ directory and rebuild.")
+                except Exception as ex:
+                    logger.error(f"Failed to verify collection after building: {ex}")
+            st.error("ChromaDB collection 'ipex_epr_docs' not found. Please add PDFs to data/pdfs/ directory.")
             return None
     except Exception as e:
         st.error(f"Failed to load ChromaDB client: {e}")
+        logger.error(f"ChromaDB client error: {e}", exc_info=True)
         return None
 
 
@@ -251,6 +260,18 @@ def main():
         # Initialize components
         if st.button("Initialize Components", type="primary"):
             with st.spinner("Loading models and database..."):
+                # Check if this is first-time setup
+                try:
+                    client = chromadb.PersistentClient(path="./data/chroma_db")
+                    try:
+                        collection = client.get_collection("ipex_epr_docs")
+                        if collection.count() == 0:
+                            st.info("🔄 Building index from PDFs (first time setup - this may take a minute)...")
+                    except Exception:
+                        st.info("🔄 Building index from PDFs (first time setup - this may take a minute)...")
+                except Exception:
+                    pass
+                
                 if initialize_components():
                     st.success("Components initialized successfully!")
                 else:
