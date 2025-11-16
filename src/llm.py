@@ -36,7 +36,7 @@ class ClaudeLLM:
         """
         try:
             self.client = Anthropic(api_key=api_key)
-            self.model = "claude-3-5-haiku-20241022"
+            self.model = "claude-4-5-haiku-20250101"
             logger.info("Claude client initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Claude client: {e}")
