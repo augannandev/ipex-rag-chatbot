@@ -304,20 +304,19 @@ def main():
         with st.chat_message(message["role"]):
             # Style citations in the content
             content = message["content"]
-            if "citations" in message and message["citations"]:
-                # Replace citation patterns with styled versions
-                citation_pattern = r'\[([^,\]]+),\s*(\d+)\]'
-                
-                def style_citation(match):
-                    doc_name = match.group(1).strip()
-                    page_num = match.group(2)
-                    return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">[{doc_name}, {page_num}]</span>'
-                
-                # Replace citations with styled HTML
-                styled_content = re.sub(citation_pattern, style_citation, content)
-                st.markdown(styled_content, unsafe_allow_html=True)
-            else:
-                st.markdown(content)
+            # Match citations in formats like:
+            # [Document X: doc_name, Page Y] or [doc_name, page_num] or [doc_name, Page Y]
+            citation_pattern = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
+            
+            def style_citation(match):
+                doc_name = match.group(1).strip()
+                page_num = match.group(2) or match.group(3) or ""
+                full_match = match.group(0)
+                return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">{full_match}</span>'
+            
+            # Replace citations with styled HTML
+            styled_content = re.sub(citation_pattern, style_citation, content)
+            st.markdown(styled_content, unsafe_allow_html=True)
             
             # Display citations if available
             if "citations" in message and message["citations"]:
@@ -397,12 +396,13 @@ def main():
                 llm_start = time.time()
                 response_placeholder = st.empty()
                 full_response = ""
-                citation_pattern = r'\[([^,\]]+),\s*(\d+)\]'
+                # Match citations in formats like:
+                # [Document X: doc_name, Page Y] or [doc_name, page_num] or [doc_name, Page Y]
+                citation_pattern = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
                 
                 def style_citation(match):
-                    doc_name = match.group(1).strip()
-                    page_num = match.group(2)
-                    return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">[{doc_name}, {page_num}]</span>'
+                    full_match = match.group(0)
+                    return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">{full_match}</span>'
                 
                 for chunk in st.session_state.llm.generate_response(prompt, retrieved_chunks, stream=True):
                     full_response += chunk

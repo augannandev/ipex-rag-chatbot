@@ -72,7 +72,10 @@ class ClaudeLLM:
     def extract_citations(self, text: str) -> List[Dict[str, str]]:
         """
         Extract citations from LLM response text.
-        Expected format: [doc_name, page_num]
+        Supports multiple formats:
+        - [Document X: doc_name, Page Y]
+        - [doc_name, Page Y]
+        - [doc_name, page_num]
         
         Args:
             text: Response text from LLM
@@ -80,17 +83,22 @@ class ClaudeLLM:
         Returns:
             List of citation dictionaries
         """
-        # Pattern to match citations like [doc_name, page_num]
-        citation_pattern = r'\[([^,\]]+),\s*(\d+)\]'
+        # Pattern to match citations in various formats
+        citation_pattern = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
         
         citations = []
         matches = re.finditer(citation_pattern, text)
         
         for match in matches:
-            citations.append({
-                'doc_name': match.group(1).strip(),
-                'page_num': int(match.group(2))
-            })
+            doc_name = match.group(1).strip()
+            # Remove "Document X:" prefix if present in doc_name
+            doc_name = re.sub(r'^Document\s+\d+:\s*', '', doc_name)
+            page_num = match.group(2) or match.group(3)
+            if page_num:
+                citations.append({
+                    'doc_name': doc_name,
+                    'page_num': int(page_num)
+                })
         
         # Remove duplicates while preserving order
         seen = set()
