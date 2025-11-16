@@ -36,7 +36,7 @@ class ClaudeLLM:
         """
         try:
             self.client = Anthropic(api_key=api_key)
-            self.model = "claude-3-haiku-20240307"
+            self.model = "claude-3-5-haiku-20241022"
             logger.info("Claude client initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Claude client: {e}")
@@ -160,7 +160,7 @@ Please provide a helpful answer based on the context above. Remember to cite sou
                 # Streaming response
                 with self.client.messages.stream(
                     model=self.model,
-                    max_tokens=1024,
+                    max_tokens=4096,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_message}]
                 ) as stream_obj:
@@ -170,7 +170,7 @@ Please provide a helpful answer based on the context above. Remember to cite sou
                 # Non-streaming response
                 message = self.client.messages.create(
                     model=self.model,
-                    max_tokens=1024,
+                    max_tokens=4096,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_message}]
                 )
