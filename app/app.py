@@ -7,6 +7,7 @@ import sys
 import os
 import logging
 import time
+import re
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -301,13 +302,33 @@ def main():
     # Display chat messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            # Style citations in the content
+            content = message["content"]
+            if "citations" in message and message["citations"]:
+                # Replace citation patterns with styled versions
+                citation_pattern = r'\[([^,\]]+),\s*(\d+)\]'
+                
+                def style_citation(match):
+                    doc_name = match.group(1).strip()
+                    page_num = match.group(2)
+                    return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">[{doc_name}, {page_num}]</span>'
+                
+                # Replace citations with styled HTML
+                styled_content = re.sub(citation_pattern, style_citation, content)
+                st.markdown(styled_content, unsafe_allow_html=True)
+            else:
+                st.markdown(content)
             
             # Display citations if available
             if "citations" in message and message["citations"]:
                 with st.expander("📎 Citations"):
                     for citation in message["citations"]:
-                        st.write(f"- **{citation['doc_name']}**, Page {citation['page_num']}")
+                        st.markdown(
+                            f'<p style="color: #1f77b4; font-style: italic; margin: 0.5em 0;">'
+                            f'<strong>{citation["doc_name"]}</strong>, Page {citation["page_num"]}'
+                            f'</p>',
+                            unsafe_allow_html=True
+                        )
             
             # Display retrieval sources if available
             if "sources" in message and message["sources"]:
@@ -376,12 +397,22 @@ def main():
                 llm_start = time.time()
                 response_placeholder = st.empty()
                 full_response = ""
+                citation_pattern = r'\[([^,\]]+),\s*(\d+)\]'
+                
+                def style_citation(match):
+                    doc_name = match.group(1).strip()
+                    page_num = match.group(2)
+                    return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">[{doc_name}, {page_num}]</span>'
                 
                 for chunk in st.session_state.llm.generate_response(prompt, retrieved_chunks, stream=True):
                     full_response += chunk
-                    response_placeholder.markdown(full_response + "▌")
+                    # Style citations in real-time during streaming
+                    styled_response = re.sub(citation_pattern, style_citation, full_response)
+                    response_placeholder.markdown(styled_response + "▌", unsafe_allow_html=True)
                 
-                response_placeholder.markdown(full_response)
+                # Final display without cursor
+                styled_response = re.sub(citation_pattern, style_citation, full_response)
+                response_placeholder.markdown(styled_response, unsafe_allow_html=True)
                 llm_time = time.time() - llm_start
                 
                 # Extract citations
@@ -409,7 +440,12 @@ def main():
                 if citations:
                     with st.expander("📎 Citations"):
                         for citation in citations:
-                            st.write(f"- **{citation['doc_name']}**, Page {citation['page_num']}")
+                            st.markdown(
+                                f'<p style="color: #1f77b4; font-style: italic; margin: 0.5em 0;">'
+                                f'<strong>{citation["doc_name"]}</strong>, Page {citation["page_num"]}'
+                                f'</p>',
+                                unsafe_allow_html=True
+                            )
                 
                 # Display retrieval sources
                 with st.expander("🔍 Retrieval Sources"):
