@@ -240,7 +240,7 @@ def get_api_key():
 
 def main():
     """Main application."""
-    st.title("📚 IPEX RAG Chatbot")
+    st.title("📚 IPEX Technical Documentation Chatbot")
     st.markdown("Query technical PDF documents with AI-powered search")
     
     # Sidebar
@@ -291,15 +291,6 @@ def main():
         )
         
         st.divider()
-        
-        # Info
-        st.info("""
-        **Instructions:**
-        1. Add PDFs to `data/pdfs/` directory
-        2. Run `python scripts/build_index.py` to build the index
-        3. Initialize components using the button above
-        4. Start chatting!
-        """)
         
         # Clear chat button
         if st.button("Clear Chat"):
