@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+rag2/
+
+# ChromaDB
+data/chroma_db/
+*.db
+*.sqlite
+
+# Environment variables
+.env
+.streamlit/secrets.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Large PDFs (uncomment if needed)
+# data/pdfs/*.pdf
+
