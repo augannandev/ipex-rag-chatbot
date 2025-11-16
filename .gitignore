@@ -33,6 +33,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Large PDFs (uncomment if needed)
+# Large PDFs - commented out to allow PDFs in repo for Streamlit Cloud
+# Uncomment the line below if you want to exclude PDFs from git
 # data/pdfs/*.pdf
 

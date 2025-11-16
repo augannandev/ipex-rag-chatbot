@@ -17,10 +17,11 @@ import chromadb
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.embeddings import embed_query, get_embedding_model
+from src.embeddings import embed_query, get_embedding_model, embed_documents
 from src.retrieval import HybridRetriever
 from src.query_router import QueryRouter, QueryType
 from src.llm import get_claude_llm, ClaudeLLM
+from src.ingestion import process_pdf_directory
 
 # Configure logging
 logging.basicConfig(
@@ -58,6 +59,85 @@ def load_embedding_model():
         return None
 
 
+def build_index_if_needed(client, collection_name: str = "ipex_epr_docs", pdf_dir: str = "./data/pdfs"):
+    """Build ChromaDB index if collection doesn't exist or is empty."""
+    try:
+        # Check if collection exists and has documents
+        try:
+            collection = client.get_collection(collection_name)
+            if collection.count() > 0:
+                return True  # Index already exists
+        except Exception:
+            pass  # Collection doesn't exist, need to create it
+        
+        # Check if PDFs exist
+        pdf_path = Path(pdf_dir)
+        if not pdf_path.exists():
+            return False
+        
+        pdf_files = list(pdf_path.glob("*.pdf"))
+        if not pdf_files:
+            return False
+        
+        # Build the index
+        logger.info(f"Building index from {len(pdf_files)} PDF files...")
+        
+        # Process PDFs
+        chunks = process_pdf_directory(pdf_dir)
+        if not chunks:
+            logger.warning("No chunks created from PDFs")
+            return False
+        
+        # Create collection
+        collection = client.get_or_create_collection(
+            name=collection_name,
+            metadata={
+                "hnsw:space": "cosine",
+                "hnsw:M": 16,
+                "description": "IPEX EPR technical documentation"
+            }
+        )
+        
+        # Prepare data for ChromaDB
+        documents = []
+        metadatas = []
+        ids = []
+        
+        for idx, chunk in enumerate(chunks):
+            documents.append(chunk['content'])
+            metadatas.append({
+                'doc_name': chunk['doc_name'],
+                'page_num': chunk['page_num'],
+                'content_type': chunk['content_type'],
+                'product_codes': ','.join(chunk['product_codes']) if chunk['product_codes'] else '',
+            })
+            ids.append(f"{chunk['doc_name']}_page{chunk['page_num']}_chunk{idx}")
+        
+        # Generate embeddings in batches
+        batch_size = 100
+        embeddings = []
+        
+        for i in range(0, len(documents), batch_size):
+            batch_docs = documents[i:i + batch_size]
+            batch_embeddings = embed_documents(batch_docs)
+            embeddings.extend(batch_embeddings.tolist())
+        
+        # Add to ChromaDB collection
+        collection.add(
+            embeddings=embeddings,
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids
+        )
+        
+        logger.info(f"Successfully built index with {len(chunks)} chunks")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to build index: {e}")
+        return False
+
+
 @st.cache_resource
 def load_chroma_client(chroma_db_path: str = "./data/chroma_db"):
     """Load ChromaDB client (cached)."""
@@ -67,11 +147,26 @@ def load_chroma_client(chroma_db_path: str = "./data/chroma_db"):
         try:
             collection = client.get_collection("ipex_epr_docs")
             if collection.count() == 0:
-                st.warning("ChromaDB collection is empty. Please run build_index.py first.")
+                # Try to build index automatically
+                if build_index_if_needed(client):
+                    # Re-get collection after building
+                    collection = client.get_collection("ipex_epr_docs")
+                    if collection.count() > 0:
+                        return client
+                st.warning("ChromaDB collection is empty. Please add PDFs to data/pdfs/ directory.")
                 return None
             return client
         except Exception:
-            st.error("ChromaDB collection 'ipex_epr_docs' not found. Please run build_index.py first.")
+            # Collection doesn't exist, try to build it automatically
+            if build_index_if_needed(client):
+                # Re-get collection after building
+                try:
+                    collection = client.get_collection("ipex_epr_docs")
+                    if collection.count() > 0:
+                        return client
+                except Exception:
+                    pass
+            st.error("ChromaDB collection 'ipex_epr_docs' not found. Please add PDFs to data/pdfs/ directory and rebuild.")
             return None
     except Exception as e:
         st.error(f"Failed to load ChromaDB client: {e}")
