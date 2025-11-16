@@ -418,12 +418,24 @@ def main():
                     full_match = match.group(0)
                     return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
                 
+                # Batch chunks for smoother streaming (reduce update frequency)
+                chunk_buffer = ""
+                last_update_time = time.time()
+                update_interval = 0.05  # Update every 50ms for smoother experience
+                
                 for chunk in st.session_state.llm.generate_response(prompt, retrieved_chunks, stream=True):
                     full_response += chunk
-                    # Style citations in real-time during streaming (both formats)
-                    styled_response = re.sub(citation_pattern_brackets, style_citation_brackets, full_response)
-                    styled_response = re.sub(citation_pattern_parens, style_citation_parens, styled_response)
-                    response_placeholder.markdown(styled_response + "▌", unsafe_allow_html=True)
+                    chunk_buffer += chunk
+                    
+                    # Throttle updates to reduce re-rendering and improve scrolling
+                    current_time = time.time()
+                    if current_time - last_update_time >= update_interval or len(chunk_buffer) >= 20:
+                        # Style citations in real-time during streaming (both formats)
+                        styled_response = re.sub(citation_pattern_brackets, style_citation_brackets, full_response)
+                        styled_response = re.sub(citation_pattern_parens, style_citation_parens, styled_response)
+                        response_placeholder.markdown(styled_response + "▌", unsafe_allow_html=True)
+                        chunk_buffer = ""
+                        last_update_time = current_time
                 
                 # Final display without cursor
                 styled_response = re.sub(citation_pattern_brackets, style_citation_brackets, full_response)
