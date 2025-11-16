@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
-    page_title="IPEX RAG Chatbot",
+    page_title="IPEX Technical Documentation Chatbot",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -48,6 +48,8 @@ if "llm" not in st.session_state:
     st.session_state.llm = None
 if "query_router" not in st.session_state:
     st.session_state.query_router = None
+if "show_latency_metrics" not in st.session_state:
+    st.session_state.show_latency_metrics = False
 
 
 @st.cache_resource
@@ -280,6 +282,16 @@ def main():
         
         st.divider()
         
+        # Dev mode toggle
+        st.subheader("Developer Options")
+        st.session_state.show_latency_metrics = st.checkbox(
+            "Show Latency Metrics",
+            value=st.session_state.show_latency_metrics,
+            help="Enable to display performance metrics for debugging"
+        )
+        
+        st.divider()
+        
         # Info
         st.info("""
         **Instructions:**
@@ -343,9 +355,9 @@ def main():
                             disabled=True
                         )
             
-            # Display latency metrics if available
-            if "latency" in message and message["latency"]:
-                with st.expander("⏱️ Latency Metrics"):
+            # Display latency metrics if available and dev mode is enabled
+            if st.session_state.show_latency_metrics and "latency" in message and message["latency"]:
+                with st.expander("⏱️ Latency Metrics (Dev Mode)"):
                     metrics = message["latency"]
                     st.metric("Total", f"{metrics.get('total', 0):.3f}s")
                     col1, col2, col3 = st.columns(3)
@@ -460,16 +472,17 @@ def main():
                             disabled=True
                         )
                 
-                # Display latency metrics
-                with st.expander("⏱️ Latency Metrics"):
-                    st.metric("Total", f"{total_metrics.get('total', 0):.3f}s")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Retrieval", f"{total_metrics.get('search', 0):.3f}s")
-                    with col2:
-                        st.metric("Reranking", f"{total_metrics.get('rerank', 0):.3f}s")
-                    with col3:
-                        st.metric("LLM", f"{total_metrics.get('llm', 0):.3f}s")
+                # Display latency metrics (only if dev mode is enabled)
+                if st.session_state.show_latency_metrics:
+                    with st.expander("⏱️ Latency Metrics (Dev Mode)"):
+                        st.metric("Total", f"{total_metrics.get('total', 0):.3f}s")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Retrieval", f"{total_metrics.get('search', 0):.3f}s")
+                        with col2:
+                            st.metric("Reranking", f"{total_metrics.get('rerank', 0):.3f}s")
+                        with col3:
+                            st.metric("LLM", f"{total_metrics.get('llm', 0):.3f}s")
                 
             except Exception as e:
                 error_msg = f"Error processing query: {str(e)}"
