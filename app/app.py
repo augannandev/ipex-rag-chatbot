@@ -307,16 +307,23 @@ def main():
         with st.chat_message(message["role"]):
             # Style citations in the content
             content = message["content"]
-            # Match citations in formats like:
+            # Match citations in multiple formats:
             # [Document X: doc_name, Page Y] or [doc_name, page_num] or [doc_name, Page Y]
-            citation_pattern = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
+            # (Reference: doc_name, p.XX) or (References: doc_name, p.XX)
+            citation_pattern_brackets = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
+            citation_pattern_parens = r'\(Reference(?:s)?:\s*([^,)]+?)(?:,\s*p\.(\d+)|,\s*(\d+))\)'
             
-            def style_citation(match):
+            def style_citation_brackets(match):
                 full_match = match.group(0)
                 return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
             
-            # Replace citations with styled HTML
-            styled_content = re.sub(citation_pattern, style_citation, content)
+            def style_citation_parens(match):
+                full_match = match.group(0)
+                return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
+            
+            # Replace citations with styled HTML (both formats)
+            styled_content = re.sub(citation_pattern_brackets, style_citation_brackets, content)
+            styled_content = re.sub(citation_pattern_parens, style_citation_parens, styled_content)
             st.markdown(styled_content, unsafe_allow_html=True)
             
             # Display citations if available
@@ -330,9 +337,9 @@ def main():
                             unsafe_allow_html=True
                         )
             
-            # Display retrieval sources if available
-            if "sources" in message and message["sources"]:
-                with st.expander("🔍 Retrieval Sources"):
+            # Display retrieval sources if available and dev mode is enabled
+            if st.session_state.show_latency_metrics and "sources" in message and message["sources"]:
+                with st.expander("🔍 Retrieval Sources (Dev Mode)"):
                     for i, source in enumerate(message["sources"], start=1):
                         metadata = source.get("metadata", {})
                         st.write(f"**Source {i}:** {metadata.get('doc_name', 'Unknown')}, Page {metadata.get('page_num', 'Unknown')}")
@@ -397,22 +404,30 @@ def main():
                 llm_start = time.time()
                 response_placeholder = st.empty()
                 full_response = ""
-                # Match citations in formats like:
+                # Match citations in multiple formats:
                 # [Document X: doc_name, Page Y] or [doc_name, page_num] or [doc_name, Page Y]
-                citation_pattern = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
+                # (Reference: doc_name, p.XX) or (References: doc_name, p.XX)
+                citation_pattern_brackets = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
+                citation_pattern_parens = r'\(Reference(?:s)?:\s*([^,)]+?)(?:,\s*p\.(\d+)|,\s*(\d+))\)'
                 
-                def style_citation(match):
+                def style_citation_brackets(match):
+                    full_match = match.group(0)
+                    return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
+                
+                def style_citation_parens(match):
                     full_match = match.group(0)
                     return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
                 
                 for chunk in st.session_state.llm.generate_response(prompt, retrieved_chunks, stream=True):
                     full_response += chunk
-                    # Style citations in real-time during streaming
-                    styled_response = re.sub(citation_pattern, style_citation, full_response)
+                    # Style citations in real-time during streaming (both formats)
+                    styled_response = re.sub(citation_pattern_brackets, style_citation_brackets, full_response)
+                    styled_response = re.sub(citation_pattern_parens, style_citation_parens, styled_response)
                     response_placeholder.markdown(styled_response + "▌", unsafe_allow_html=True)
                 
                 # Final display without cursor
-                styled_response = re.sub(citation_pattern, style_citation, full_response)
+                styled_response = re.sub(citation_pattern_brackets, style_citation_brackets, full_response)
+                styled_response = re.sub(citation_pattern_parens, style_citation_parens, styled_response)
                 response_placeholder.markdown(styled_response, unsafe_allow_html=True)
                 llm_time = time.time() - llm_start
                 
@@ -448,18 +463,19 @@ def main():
                                 unsafe_allow_html=True
                             )
                 
-                # Display retrieval sources
-                with st.expander("🔍 Retrieval Sources"):
-                    for i, source in enumerate(retrieved_chunks, start=1):
-                        metadata = source.get("metadata", {})
-                        st.write(f"**Source {i}:** {metadata.get('doc_name', 'Unknown')}, Page {metadata.get('page_num', 'Unknown')}")
-                        st.text_area(
-                            f"Content {i}",
-                            source.get("document", "")[:500] + "..." if len(source.get("document", "")) > 500 else source.get("document", ""),
-                            height=100,
-                            key=f"source_{message_id}_{i}",
-                            disabled=True
-                        )
+                # Display retrieval sources (only if dev mode is enabled)
+                if st.session_state.show_latency_metrics:
+                    with st.expander("🔍 Retrieval Sources (Dev Mode)"):
+                        for i, source in enumerate(retrieved_chunks, start=1):
+                            metadata = source.get("metadata", {})
+                            st.write(f"**Source {i}:** {metadata.get('doc_name', 'Unknown')}, Page {metadata.get('page_num', 'Unknown')}")
+                            st.text_area(
+                                f"Content {i}",
+                                source.get("document", "")[:500] + "..." if len(source.get("document", "")) > 500 else source.get("document", ""),
+                                height=100,
+                                key=f"source_{message_id}_{i}",
+                                disabled=True
+                            )
                 
                 # Display latency metrics (only if dev mode is enabled)
                 if st.session_state.show_latency_metrics:

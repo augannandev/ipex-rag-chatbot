@@ -76,6 +76,8 @@ class ClaudeLLM:
         - [Document X: doc_name, Page Y]
         - [doc_name, Page Y]
         - [doc_name, page_num]
+        - (Reference: doc_name, p.XX)
+        - (References: doc_name, p.XX)
         
         Args:
             text: Response text from LLM
@@ -83,16 +85,29 @@ class ClaudeLLM:
         Returns:
             List of citation dictionaries
         """
-        # Pattern to match citations in various formats
-        citation_pattern = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
-        
         citations = []
-        matches = re.finditer(citation_pattern, text)
+        
+        # Pattern to match citations in bracket format
+        citation_pattern_brackets = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
+        matches = re.finditer(citation_pattern_brackets, text)
         
         for match in matches:
             doc_name = match.group(1).strip()
             # Remove "Document X:" prefix if present in doc_name
             doc_name = re.sub(r'^Document\s+\d+:\s*', '', doc_name)
+            page_num = match.group(2) or match.group(3)
+            if page_num:
+                citations.append({
+                    'doc_name': doc_name,
+                    'page_num': int(page_num)
+                })
+        
+        # Pattern to match citations in parentheses format
+        citation_pattern_parens = r'\(Reference(?:s)?:\s*([^,)]+?)(?:,\s*p\.(\d+)|,\s*(\d+))\)'
+        matches = re.finditer(citation_pattern_parens, text)
+        
+        for match in matches:
+            doc_name = match.group(1).strip()
             page_num = match.group(2) or match.group(3)
             if page_num:
                 citations.append({
