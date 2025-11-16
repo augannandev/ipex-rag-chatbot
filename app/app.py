@@ -312,10 +312,8 @@ def main():
             citation_pattern = r'\[(?:Document\s+\d+:\s*)?([^,\]]+?)(?:,\s*Page\s+(\d+)|,\s*(\d+))\]'
             
             def style_citation(match):
-                doc_name = match.group(1).strip()
-                page_num = match.group(2) or match.group(3) or ""
                 full_match = match.group(0)
-                return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">{full_match}</span>'
+                return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
             
             # Replace citations with styled HTML
             styled_content = re.sub(citation_pattern, style_citation, content)
@@ -405,7 +403,7 @@ def main():
                 
                 def style_citation(match):
                     full_match = match.group(0)
-                    return f'<span style="color: #1f77b4; font-style: italic; background-color: #f0f2f6; padding: 2px 4px; border-radius: 3px;">{full_match}</span>'
+                    return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
                 
                 for chunk in st.session_state.llm.generate_response(prompt, retrieved_chunks, stream=True):
                     full_response += chunk
