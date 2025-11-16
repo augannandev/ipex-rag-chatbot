@@ -9,20 +9,37 @@ import logging
 import time
 import re
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple, Optional
 
 import streamlit as st
 import chromadb
+import pandas as pd
 
 # Add parent directory to path to import src modules
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+project_root_str = str(project_root.resolve())
+if project_root_str not in sys.path:
+    sys.path.insert(0, project_root_str)
 
-from src.embeddings import embed_query, get_embedding_model, embed_documents
-from src.retrieval import HybridRetriever
-from src.query_router import QueryRouter, QueryType
-from src.llm import get_claude_llm, ClaudeLLM
-from src.ingestion import process_pdf_directory
+# Verify src module can be imported
+try:
+    from src.embeddings import embed_query, get_embedding_model, embed_documents
+    from src.retrieval import HybridRetriever
+    from src.query_router import QueryRouter, QueryType
+    from src.llm import get_claude_llm, ClaudeLLM
+    from src.ingestion import process_pdf_directory
+except ImportError as e:
+    # If imports fail, try adding current working directory to path
+    import os
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+    # Retry imports
+    from src.embeddings import embed_query, get_embedding_model, embed_documents
+    from src.retrieval import HybridRetriever
+    from src.query_router import QueryRouter, QueryType
+    from src.llm import get_claude_llm, ClaudeLLM
+    from src.ingestion import process_pdf_directory
 
 # Configure logging
 logging.basicConfig(
@@ -220,6 +237,113 @@ def initialize_components():
     return True
 
 
+def detect_and_format_tables(text: str) -> Tuple[str, List[pd.DataFrame]]:
+    """
+    Detect table-like patterns in text and format them as tables.
+    
+    Args:
+        text: Response text that may contain table data
+        
+    Returns:
+        Tuple of (formatted_text, list_of_dataframes)
+    """
+    tables_found = []
+    formatted_text = text
+    
+    # Pattern 1: Detect lines with "Size:", "Part Number:", "Product Code:" pattern
+    # Example: "Size: 1-1/4, Part Number: EPR25, Product Code: 077982"
+    # Also handles variations like "Size 1-1/4, Part Number EPR25, Product Code 077982"
+    # Match pattern that can span multiple lines
+    table_pattern1 = r'(?:Size|size)[:\s]+([^,\n]+?),\s*(?:Part\s+Number|Part Number|Part#|Part\s*#)[:\s]*([^,\n]+?),\s*(?:Product\s+Code|Product Code|Code)[:\s]*([^\n]+?)(?=\n|$)'
+    
+    matches = list(re.finditer(table_pattern1, text, re.IGNORECASE | re.MULTILINE))
+    if matches and len(matches) >= 2:  # Need at least 2 rows to be considered a table
+        rows = []
+        start_pos = matches[0].start()
+        end_pos = matches[-1].end()
+        
+        for match in matches:
+            size = match.group(1).strip()
+            part_number = match.group(2).strip()
+            product_code = match.group(3).strip()
+            # Clean up any trailing punctuation or whitespace
+            product_code = product_code.rstrip('.,;')
+            rows.append({
+                'Size (in)': size,
+                'Part Number': part_number,
+                'Product Code': product_code
+            })
+        
+        if rows:
+            df = pd.DataFrame(rows)
+            tables_found.append(df)
+            # Replace the entire matched section with a single placeholder
+            formatted_text = formatted_text[:start_pos] + '[TABLE_PLACEHOLDER]' + formatted_text[end_pos:]
+    
+    # Pattern 2: Detect markdown-style tables or pipe-separated tables
+    # Pattern for lines with multiple columns separated by | or consistent spacing
+    lines = text.split('\n')
+    table_lines = []
+    in_table = False
+    current_table_lines = []
+    
+    for i, line in enumerate(lines):
+        # Check if line looks like a table row (has multiple | or consistent spacing)
+        if '|' in line and line.count('|') >= 2:
+            if not in_table:
+                in_table = True
+                current_table_lines = []
+            current_table_lines.append(line)
+        elif in_table and (line.strip() == '' or not ('|' in line and line.count('|') >= 2)):
+            # End of table
+            if len(current_table_lines) >= 2:  # At least header + 1 row
+                table_lines.append((i - len(current_table_lines), current_table_lines))
+            in_table = False
+            current_table_lines = []
+        elif in_table:
+            current_table_lines.append(line)
+    
+    # Process detected table lines
+    for start_idx, table_data in table_lines:
+        try:
+            # Try to parse as markdown table
+            table_text = '\n'.join(table_data)
+            # Remove markdown table formatting and parse
+            clean_lines = [line.strip('|').strip() for line in table_data if line.strip()]
+            if len(clean_lines) >= 2:
+                headers = [h.strip() for h in clean_lines[0].split('|')]
+                rows_data = []
+                for row_line in clean_lines[2:]:  # Skip header and separator
+                    row_values = [v.strip() for v in row_line.split('|')]
+                    if len(row_values) == len(headers):
+                        rows_data.append(dict(zip(headers, row_values)))
+                
+                if rows_data:
+                    df = pd.DataFrame(rows_data)
+                    tables_found.append(df)
+                    # Replace table in text
+                    placeholder = f'[TABLE_PLACEHOLDER_{len(tables_found)}]'
+                    formatted_text = formatted_text.replace(table_text, placeholder)
+        except Exception as e:
+            logger.warning(f"Failed to parse table: {e}")
+            continue
+    
+    return formatted_text, tables_found
+
+
+def format_response_with_tables(text: str) -> Tuple[str, List[pd.DataFrame]]:
+    """
+    Format response text, detecting and extracting tables.
+    
+    Args:
+        text: Response text
+        
+    Returns:
+        Tuple of (formatted_text_with_placeholders, list_of_dataframes)
+    """
+    return detect_and_format_tables(text)
+
+
 def get_api_key():
     """Get API key from Streamlit secrets or sidebar input."""
     # Try secrets first
@@ -321,10 +445,28 @@ def main():
                 full_match = match.group(0)
                 return f'<span style="color: #0066cc; font-style: italic; background-color: #e6f2ff; padding: 3px 6px; border-radius: 4px; font-weight: 500; border: 1px solid #b3d9ff;">{full_match}</span>'
             
-            # Replace citations with styled HTML (both formats)
-            styled_content = re.sub(citation_pattern_brackets, style_citation_brackets, content)
-            styled_content = re.sub(citation_pattern_parens, style_citation_parens, styled_content)
-            st.markdown(styled_content, unsafe_allow_html=True)
+            # Detect and format tables in message history
+            if message["role"] == "assistant" and "tables" in message and message["tables"]:
+                # Format text with tables
+                formatted_text, _ = format_response_with_tables(content)
+                styled_content = re.sub(citation_pattern_brackets, style_citation_brackets, formatted_text)
+                styled_content = re.sub(citation_pattern_parens, style_citation_parens, styled_content)
+                
+                # Display text with tables interspersed
+                parts = re.split(r'\[TABLE_PLACEHOLDER(?:_\d+)?\]', styled_content)
+                table_idx = 0
+                for i, part in enumerate(parts):
+                    if part.strip():
+                        st.markdown(part, unsafe_allow_html=True)
+                    if i < len(parts) - 1 and table_idx < len(message["tables"]):
+                        # Display table
+                        st.dataframe(message["tables"][table_idx], use_container_width=True, hide_index=True)
+                        table_idx += 1
+            else:
+                # Replace citations with styled HTML (both formats)
+                styled_content = re.sub(citation_pattern_brackets, style_citation_brackets, content)
+                styled_content = re.sub(citation_pattern_parens, style_citation_parens, styled_content)
+                st.markdown(styled_content, unsafe_allow_html=True)
             
             # Display citations if available
             if "citations" in message and message["citations"]:
@@ -437,10 +579,28 @@ def main():
                         chunk_buffer = ""
                         last_update_time = current_time
                 
-                # Final display without cursor
-                styled_response = re.sub(citation_pattern_brackets, style_citation_brackets, full_response)
+                # Final display without cursor - detect and format tables
+                formatted_text, detected_tables = format_response_with_tables(full_response)
+                styled_response = re.sub(citation_pattern_brackets, style_citation_brackets, formatted_text)
                 styled_response = re.sub(citation_pattern_parens, style_citation_parens, styled_response)
-                response_placeholder.markdown(styled_response, unsafe_allow_html=True)
+                
+                # Display response with tables
+                if detected_tables:
+                    # Split text by table placeholders and display with tables
+                    parts = re.split(r'\[TABLE_PLACEHOLDER(?:_\d+)?\]', styled_response)
+                    table_idx = 0
+                    # Clear the placeholder and display content with tables
+                    response_placeholder.empty()
+                    for i, part in enumerate(parts):
+                        if part.strip():
+                            st.markdown(part, unsafe_allow_html=True)
+                        if i < len(parts) - 1 and table_idx < len(detected_tables):
+                            # Display table
+                            st.dataframe(detected_tables[table_idx], use_container_width=True, hide_index=True)
+                            table_idx += 1
+                else:
+                    response_placeholder.markdown(styled_response, unsafe_allow_html=True)
+                
                 llm_time = time.time() - llm_start
                 
                 # Extract citations
@@ -453,7 +613,7 @@ def main():
                     "total": retrieval_metrics.get("total", 0) + llm_time
                 }
                 
-                # Add assistant message to history
+                # Add assistant message to history (store tables for later display)
                 message_id = len(st.session_state.messages)
                 st.session_state.messages.append({
                     "role": "assistant",
@@ -461,6 +621,7 @@ def main():
                     "citations": citations,
                     "sources": retrieved_chunks,
                     "latency": total_metrics,
+                    "tables": detected_tables,  # Store tables for message history
                     "id": message_id
                 })
                 
